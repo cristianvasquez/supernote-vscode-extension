@@ -1,274 +1,280 @@
-"use strict";
+'use strict'
 
 // === Global State
-let scheduledRender = false;
-let isSafari = false;
-let windowSizeX = 0;
-let windowSizeY = 0;
-let scrollY = 0;
-let pointer = { x: -Infinity, y: -Infinity };
-let events = { keydown: null, click: null, mousemove: null };
-let animatedUntilTime = null;
-let reducedMotion = null;
-let anchor = 0;
-let data = [];
-let dummyPlaceholder = null;
-let currentFocusedIndex = null;
+let scheduledRender = false
+let isSafari = false
+let windowSizeX = 0
+let windowSizeY = 0
+let scrollY = 0
+let pointer = { x: -Infinity, y: -Infinity }
+let events = { keydown: null, click: null, mousemove: null }
+let animatedUntilTime = null
+let reducedMotion = null
+let anchor = 0
+let data = []
+let dummyPlaceholder = null
+let currentFocusedIndex = null
 
 // === Config
-const debug = false;
-const msPerAnimationStep = 1;
-const promptPaddingBottom = 8;
-const promptSizeY = 44 + promptPaddingBottom;
-const prompt1DSizeY = 64 + promptPaddingBottom;
+const debug = false
+const msPerAnimationStep = 1
+const promptPaddingBottom = 8
+const promptSizeY = 44 + promptPaddingBottom
+const prompt1DSizeY = 64 + promptPaddingBottom
 const boxesGapX = 24,
-  boxesGapY = 24;
+  boxesGapY = 24
 const boxes1DGapX = 52,
-  boxes1DGapY = 28;
-const windowPaddingTop = 40;
-const gapTopPeek = 40;
-const hitArea1DSizeX = 100;
-const hoverMagnetFactor = 40;
-const browserUIMaxSizeTop = 100;
-const browserUIMaxSizeBottom = 150;
+  boxes1DGapY = 28
+const windowPaddingTop = 40
+const gapTopPeek = 40
+const hitArea1DSizeX = 100
+const hoverMagnetFactor = 40
+const browserUIMaxSizeTop = 100
+const browserUIMaxSizeBottom = 150
 
 // === Spring Physics
-function spring(pos, v = 0, k = 290, b = 30) {
-  return { pos, dest: pos, v, k, b };
+function spring (pos, v = 0, k = 450, b = 45) {
+  return { pos, dest: pos, v, k, b }
 }
-function springStep(s) {
-  const t = msPerAnimationStep / 1000;
-  const { pos, dest, v, k, b } = s;
-  const Fspring = -k * (pos - dest);
-  const Fdamper = -b * v;
-  const a = Fspring + Fdamper;
-  s.v += a * t;
-  s.pos += s.v * t;
+
+function springStep (s) {
+  const t = msPerAnimationStep / 1000
+  const { pos, dest, v, k, b } = s
+  const Fspring = -k * (pos - dest)
+  const Fdamper = -b * v
+  const a = Fspring + Fdamper
+  s.v += a * t
+  s.pos += s.v * t
 }
-function springGoToEnd(s) {
-  s.pos = s.dest;
-  s.v = 0;
+
+function springGoToEnd (s) {
+  s.pos = s.dest
+  s.v = 0
 }
-function springForEach(fn) {
+
+function springForEach (fn) {
   for (const d of data) {
-    fn(d.x);
-    fn(d.y);
-    fn(d.sizeX);
-    fn(d.sizeY);
-    fn(d.scale);
-    fn(d.fxFactor);
+    fn(d.x)
+    fn(d.y)
+    fn(d.sizeX)
+    fn(d.sizeY)
+    fn(d.scale)
+    fn(d.fxFactor)
   }
 }
 
 // === Helpers
-function clamp(min, v, max) {
-  return Math.max(min, Math.min(v, max));
+function clamp (min, v, max) {
+  return Math.max(min, Math.min(v, max))
 }
-function colsBoxMaxSizeXF(containerSizeX) {
-  const boxMinSizeX = 220;
+
+function colsBoxMaxSizeXF (containerSizeX) {
+  const boxMinSizeX = 220
   const cols = clamp(
     1,
     Math.floor((containerSizeX - boxesGapX) / (boxMinSizeX + boxesGapX)),
-    7
-  );
-  const boxMaxSizeX = (containerSizeX - boxesGapX - cols * boxesGapX) / cols;
-  return { cols, boxMaxSizeX };
+    7,
+  )
+  const boxMaxSizeX = (containerSizeX - boxesGapX - cols * boxesGapX) / cols
+  return { cols, boxMaxSizeX }
 }
-function scheduleRender() {
+
+function scheduleRender () {
   if (!scheduledRender) {
-    scheduledRender = true;
+    scheduledRender = true
     requestAnimationFrame(function (now) {
-      scheduledRender = false;
-      if (render(now)) scheduleRender();
-    });
+      scheduledRender = false
+      if (render(now)) scheduleRender()
+    })
   }
 }
 
 // === Hit Testing
-function hitTest2DMode(data, pointerX, pointerY) {
+function hitTest2DMode (data, pointerX, pointerY) {
   for (let i = 0; i < data.length; i++) {
-    const { x, y, sizeX, sizeY } = data[i];
+    const { x, y, sizeX, sizeY } = data[i]
     if (
       x.dest <= pointerX &&
       pointerX < x.dest + sizeX.dest &&
       y.dest <= pointerY &&
       pointerY < y.dest + sizeY.dest
     )
-      return i;
+      return i
   }
-  return null;
+  return null
 }
-function hitTest1DMode(data, focused, windowSizeX, pointerX) {
-  if (focused > 0 && pointerX <= hitArea1DSizeX) return focused - 1;
+
+function hitTest1DMode (data, focused, windowSizeX, pointerX) {
+  if (focused > 0 && pointerX <= hitArea1DSizeX) return focused - 1
   if (focused < data.length - 1 && pointerX >= windowSizeX - hitArea1DSizeX)
-    return focused + 1;
-  return null;
+    return focused + 1
+  return null
 }
 
 // === Main Render Function
-function render(now) {
-  if (data.length === 0) return;
+function render (now) {
+  if (data.length === 0) return
 
-  const inputCode = events.keydown?.code ?? null;
+  const inputCode = events.keydown?.code ?? null
   if (events.click) {
-    pointer.x = events.click.clientX;
-    pointer.y = events.click.clientY;
+    pointer.x = events.click.clientX
+    pointer.y = events.click.clientY
   }
   if (events.mousemove) {
-    pointer.x = events.mousemove.clientX;
-    pointer.y = events.mousemove.clientY;
+    pointer.x = events.mousemove.clientX
+    pointer.y = events.mousemove.clientY
   }
 
   // Update window size on each render to handle resizes
-  const newWindowSizeX = document.documentElement.clientWidth;
-  const newWindowSizeY = document.documentElement.clientHeight;
+  const newWindowSizeX = document.documentElement.clientWidth
+  const newWindowSizeY = document.documentElement.clientHeight
 
-  const animationDisabled = reducedMotion.matches;
-  const currentScrollY = isSafari ? document.body.scrollTop : window.scrollY;
-  const currentScrollX = isSafari ? document.body.scrollLeft : window.scrollX;
-  const hashImgId = window.location.hash.slice(1);
+  const animationDisabled = reducedMotion.matches
+  const currentScrollY = isSafari ? document.body.scrollTop : window.scrollY
+  const currentScrollX = isSafari ? document.body.scrollLeft : window.scrollX
+  const hashImgId = window.location.hash.slice(1)
 
   // Correctly handle focused state: null if no hash, otherwise find index
-  let focused = hashImgId ? data.findIndex((d) => d.id === hashImgId) : null;
-  if (focused === -1) focused = null;
+  let focused = hashImgId ? data.findIndex((d) => d.id === hashImgId) : null
+  if (focused === -1) focused = null
 
-  const pointerXLocal = pointer.x + currentScrollX;
-  const pointerYLocal = pointer.y + currentScrollY;
+  const pointerXLocal = pointer.x + currentScrollX
+  const pointerYLocal = pointer.y + currentScrollY
 
   // Calculate cols early for navigation
-  const { cols, boxMaxSizeX } = colsBoxMaxSizeXF(newWindowSizeX);
+  const { cols, boxMaxSizeX } = colsBoxMaxSizeXF(newWindowSizeX)
 
   let newFocused = (() => {
-    if (inputCode === "Escape") {
+    if (inputCode === 'Escape') {
       // Store current focused index when escaping to grid view
       if (focused !== null) {
-        currentFocusedIndex = focused;
+        currentFocusedIndex = focused
       }
-      return null;
+      return null
     }
-    if (inputCode === "Space") return focused;
+    if (inputCode === 'Space') return focused
     if (
-      (inputCode === "ArrowLeft" ||
-        inputCode === "ArrowRight" ||
-        inputCode === "ArrowUp" ||
-        inputCode === "ArrowDown") &&
+      (inputCode === 'ArrowLeft' ||
+        inputCode === 'ArrowRight' ||
+        inputCode === 'ArrowUp' ||
+        inputCode === 'ArrowDown') &&
       focused == null
     )
-      return currentFocusedIndex !== null ? currentFocusedIndex : 0;
-    if (inputCode === "ArrowLeft") return Math.max(0, focused - 1);
-    if (inputCode === "ArrowRight")
-      return Math.min(data.length - 1, focused + 1);
-    if (inputCode === "ArrowUp") return Math.max(0, focused - cols);
-    if (inputCode === "ArrowDown")
-      return Math.min(data.length - 1, focused + cols);
-    return focused;
-  })();
+      return currentFocusedIndex !== null ? currentFocusedIndex : 0
+    if (inputCode === 'ArrowLeft') return Math.max(0, focused - 1)
+    if (inputCode === 'ArrowRight')
+      return Math.min(data.length - 1, focused + 1)
+    if (inputCode === 'ArrowUp') return Math.max(0, focused - cols)
+    if (inputCode === 'ArrowDown')
+      return Math.min(data.length - 1, focused + cols)
+    return focused
+  })()
 
   if (events.click) {
-    const { target } = events.click;
-    if (target.tagName === "FIGCAPTION") {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(target);
-      selection.removeAllRanges();
-      selection.addRange(range);
+    const { target } = events.click
+    if (target.tagName === 'FIGCAPTION') {
+      const selection = window.getSelection()
+      const range = document.createRange()
+      range.selectNodeContents(target)
+      selection.removeAllRanges()
+      selection.addRange(range)
     } else if (focused == null) {
-      const hitIndex = hitTest2DMode(data, pointerXLocal, pointerYLocal);
+      const hitIndex = hitTest2DMode(data, pointerXLocal, pointerYLocal)
       if (
         hitIndex !== null &&
         data[hitIndex].isUpload &&
         data[hitIndex].onUploadClick
       ) {
-        data[hitIndex].onUploadClick();
-        newFocused = newFocused;
+        data[hitIndex].onUploadClick()
+        newFocused = newFocused
       } else {
-        newFocused = hitIndex ?? newFocused;
+        newFocused = hitIndex ?? newFocused
       }
     } else {
-      newFocused = hitTest1DMode(data, focused, newWindowSizeX, pointerXLocal);
+      newFocused = hitTest1DMode(data, focused, newWindowSizeX, pointerXLocal)
     }
   }
 
   const boxes2DSizeX = [],
     boxes2DSizeY = [],
-    rowsTop = [windowPaddingTop];
+    rowsTop = [windowPaddingTop]
   {
-    let rowMaxSizeY = 0;
+    let rowMaxSizeY = 0
     for (let i = 0; i < data.length; i++) {
-      const d = data[i];
+      const d = data[i]
       const imgMaxSizeY =
         d.ar === 1
           ? boxMaxSizeX * 0.85
           : d.ar < 1
-          ? boxMaxSizeX * 1.05
-          : boxMaxSizeX;
-      const sizeX = Math.min(d.naturalSizeX, boxMaxSizeX, imgMaxSizeY * d.ar);
-      const sizeY = sizeX / d.ar + (d.hasPrompt ? promptSizeY : 0);
-      boxes2DSizeX.push(sizeX);
-      boxes2DSizeY.push(sizeY);
-      rowMaxSizeY = Math.max(rowMaxSizeY, sizeY);
+            ? boxMaxSizeX * 1.05
+            : boxMaxSizeX
+      const sizeX = Math.min(d.naturalSizeX, boxMaxSizeX, imgMaxSizeY * d.ar)
+      const sizeY = sizeX / d.ar + (d.hasPrompt ? promptSizeY : 0)
+      boxes2DSizeX.push(sizeX)
+      boxes2DSizeY.push(sizeY)
+      rowMaxSizeY = Math.max(rowMaxSizeY, sizeY)
       if (i % cols === cols - 1 || i === data.length - 1) {
-        rowsTop.push(rowsTop.at(-1) + rowMaxSizeY + boxesGapY);
-        rowMaxSizeY = 0;
+        rowsTop.push(rowsTop.at(-1) + rowMaxSizeY + boxesGapY)
+        rowMaxSizeY = 0
       }
     }
   }
 
-  let cursor = "auto";
-  let newAnchor = anchor;
-  let adjustedScrollTop = currentScrollY;
+  let cursor = 'auto'
+  let newAnchor = anchor
+  let adjustedScrollTop = currentScrollY
 
   if (newFocused == null) {
     if (focused != null) {
-      const focusedTop = rowsTop[Math.floor(focused / cols)];
-      const focusedBottom = focusedTop + boxes2DSizeY[focused];
+      const focusedTop = rowsTop[Math.floor(focused / cols)]
+      const focusedBottom = focusedTop + boxes2DSizeY[focused]
       if (
         focusedTop <= currentScrollY ||
         focusedBottom >= currentScrollY + newWindowSizeY
       ) {
-        adjustedScrollTop = focusedTop - boxesGapY - gapTopPeek;
+        adjustedScrollTop = focusedTop - boxesGapY - gapTopPeek
       }
     }
 
     for (let i = 0; i < data.length; i++) {
-      const d = data[i];
-      const sizeX = boxes2DSizeX[i];
-      const sizeY = boxes2DSizeY[i];
-      const row = Math.floor(i / cols);
-      const rowMaxSizeY = rowsTop[row + 1] - boxesGapY - rowsTop[row];
-      d.sizeX.dest = sizeX;
-      d.sizeY.dest = sizeY;
+      const d = data[i]
+      const sizeX = boxes2DSizeX[i]
+      const sizeY = boxes2DSizeY[i]
+      const row = Math.floor(i / cols)
+      const rowMaxSizeY = rowsTop[row + 1] - boxesGapY - rowsTop[row]
+      d.sizeX.dest = sizeX
+      d.sizeY.dest = sizeY
       d.x.dest =
         boxesGapX +
         (boxMaxSizeX + boxesGapX) * (i % cols) +
-        (boxMaxSizeX - sizeX) / 2;
-      d.y.dest = rowsTop[row] + (rowMaxSizeY - sizeY) / 2;
-      d.scale.dest = 1;
-      d.fxFactor.dest = 1;
+        (boxMaxSizeX - sizeX) / 2
+      d.y.dest = rowsTop[row] + (rowMaxSizeY - sizeY) / 2
+      d.scale.dest = 1
+      d.fxFactor.dest = 1
     }
 
-    const hit = hitTest2DMode(data, pointerXLocal, pointerYLocal);
+    const hit = hitTest2DMode(data, pointerXLocal, pointerYLocal)
     if (hit != null) {
-      cursor = "zoom-in";
-      const d = data[hit];
+      cursor = 'zoom-in'
+      const d = data[hit]
       d.x.dest +=
-        (pointerXLocal - (d.x.dest + d.sizeX.dest / 2)) / hoverMagnetFactor;
+        (pointerXLocal - (d.x.dest + d.sizeX.dest / 2)) / hoverMagnetFactor
       d.y.dest +=
-        (pointerYLocal - (d.y.dest + d.sizeY.dest / 2)) / hoverMagnetFactor;
-      d.scale.dest = 1.02;
+        (pointerYLocal - (d.y.dest + d.sizeY.dest / 2)) / hoverMagnetFactor
+      d.scale.dest = 1.02
     }
 
-    const anchorY = data[anchor].y.dest - gapTopPeek;
+    const anchorY = data[anchor].y.dest - gapTopPeek
     if (newWindowSizeX !== windowSizeX)
-      adjustedScrollTop = Math.max(0, anchorY);
+      adjustedScrollTop = Math.max(0, anchorY)
     if (
       adjustedScrollTop !== scrollY &&
       Math.abs(anchorY - adjustedScrollTop) > newWindowSizeY / 10
     ) {
       for (newAnchor = 0; newAnchor < data.length; newAnchor += cols) {
-        const d = data[newAnchor];
+        const d = data[newAnchor]
         if (d.y.dest + d.sizeY.dest - adjustedScrollTop > newWindowSizeY / 5)
-          break;
+          break
       }
     }
   } else {
@@ -276,193 +282,193 @@ function render(now) {
       newWindowSizeY -
       windowPaddingTop -
       (data[newFocused].hasPrompt ? prompt1DSizeY : 0) -
-      boxes1DGapY;
-    const box1DMaxSizeX = newWindowSizeX - boxes1DGapX * 2 - hitArea1DSizeX * 2;
+      boxes1DGapY
+    const box1DMaxSizeX = newWindowSizeX - boxes1DGapX * 2 - hitArea1DSizeX * 2
 
-    let currentLeft = hitArea1DSizeX + boxes1DGapX;
+    let currentLeft = hitArea1DSizeX + boxes1DGapX
     for (let i = newFocused - 1; i >= 0; i--) {
-      const d = data[i];
+      const d = data[i]
       const imgSizeX =
-        Math.min(d.naturalSizeX, box1DMaxSizeX, img1DSizeY * d.ar) * 0.7;
-      currentLeft -= imgSizeX + boxes1DGapX;
+        Math.min(d.naturalSizeX, box1DMaxSizeX, img1DSizeY * d.ar) * 0.7
+      currentLeft -= imgSizeX + boxes1DGapX
     }
 
     const edgeBoost =
-      inputCode === "ArrowLeft" && focused === 0
+      inputCode === 'ArrowLeft' && focused === 0
         ? 2000
-        : inputCode === "ArrowRight" && focused === data.length - 1
-        ? -2000
-        : 0;
+        : inputCode === 'ArrowRight' && focused === data.length - 1
+          ? -2000
+          : 0
 
     const verticalBoost =
-      inputCode === "ArrowUp" ? -1500 : inputCode === "ArrowDown" ? 1500 : 0;
+      inputCode === 'ArrowUp' ? -1500 : inputCode === 'ArrowDown' ? 1500 : 0
 
     for (let i = 0; i < data.length; i++) {
-      const d = data[i];
-      const isFocused = i === newFocused;
+      const d = data[i]
+      const isFocused = i === newFocused
       const imgSizeX =
         Math.min(d.naturalSizeX, box1DMaxSizeX, img1DSizeY * d.ar) *
-        (isFocused ? 1 : 0.7);
+        (isFocused ? 1 : 0.7)
       const sizeY =
         imgSizeX / d.ar +
         (d.hasPrompt && isFocused
           ? prompt1DSizeY
           : d.hasPrompt
-          ? promptSizeY
-          : 0);
-      d.sizeX.dest = imgSizeX;
-      d.sizeY.dest = sizeY;
+            ? promptSizeY
+            : 0)
+      d.sizeX.dest = imgSizeX
+      d.sizeY.dest = sizeY
       d.y.dest =
         Math.max(windowPaddingTop, (newWindowSizeY - sizeY) / 2) +
-        adjustedScrollTop;
-      d.x.dest = isFocused ? (newWindowSizeX - imgSizeX) / 2 : currentLeft;
-      d.x.v += edgeBoost / (isFocused ? 1 : 4);
-      d.y.v += verticalBoost / (isFocused ? 1 : 4);
-      d.scale.dest = 1;
-      d.fxFactor.dest = isFocused ? 1 : 0.2;
+        adjustedScrollTop
+      d.x.dest = isFocused ? (newWindowSizeX - imgSizeX) / 2 : currentLeft
+      d.x.v += edgeBoost / (isFocused ? 1 : 4)
+      d.y.v += verticalBoost / (isFocused ? 1 : 4)
+      d.scale.dest = 1
+      d.fxFactor.dest = isFocused ? 1 : 0.2
       currentLeft = isFocused
         ? newWindowSizeX - hitArea1DSizeX
-        : currentLeft + imgSizeX + boxes1DGapX;
+        : currentLeft + imgSizeX + boxes1DGapX
     }
 
-    const hit = hitTest1DMode(data, newFocused, newWindowSizeX, pointerXLocal);
+    const hit = hitTest1DMode(data, newFocused, newWindowSizeX, pointerXLocal)
     if (hit != null) {
-      cursor = "zoom-in";
-      const d = data[hit];
+      cursor = 'zoom-in'
+      const d = data[hit]
       d.x.dest +=
-        (pointerXLocal - (d.x.dest + d.sizeX.dest / 2)) / hoverMagnetFactor;
+        (pointerXLocal - (d.x.dest + d.sizeX.dest / 2)) / hoverMagnetFactor
       d.y.dest +=
-        (pointerYLocal - (d.y.dest + d.sizeY.dest / 2)) / hoverMagnetFactor;
-      d.scale.dest = 1.02;
-      d.fxFactor.dest = 0.5;
+        (pointerYLocal - (d.y.dest + d.sizeY.dest / 2)) / hoverMagnetFactor
+      d.scale.dest = 1.02
+      d.fxFactor.dest = 0.5
     } else {
-      cursor = "zoom-out";
+      cursor = 'zoom-out'
     }
   }
 
-  for (const d of data) d.y.pos += adjustedScrollTop - currentScrollY;
+  for (const d of data) d.y.pos += adjustedScrollTop - currentScrollY
 
   // === Animate
-  let newAnimatedUntilTime = animatedUntilTime ?? now;
-  const steps = Math.floor((now - newAnimatedUntilTime) / msPerAnimationStep);
-  newAnimatedUntilTime += steps * msPerAnimationStep;
-  let stillAnimating = false;
+  let newAnimatedUntilTime = animatedUntilTime ?? now
+  const steps = Math.floor((now - newAnimatedUntilTime) / msPerAnimationStep)
+  newAnimatedUntilTime += steps * msPerAnimationStep
+  let stillAnimating = false
 
-  if (animationDisabled) springForEach(springGoToEnd);
+  if (animationDisabled) springForEach(springGoToEnd)
   else {
     springForEach((s) => {
-      for (let i = 0; i < steps; i++) springStep(s);
+      for (let i = 0; i < steps; i++) springStep(s)
       if (Math.abs(s.v) < 0.01 && Math.abs(s.dest - s.pos) < 0.01)
-        springGoToEnd(s);
-      else stillAnimating = true;
-    });
+        springGoToEnd(s)
+      else stillAnimating = true
+    })
   }
 
   // === DOM Update
   for (let i = 0; i < data.length; i++) {
-    const d = data[i];
-    const { node } = d;
-    const img = node.children[0];
-    const prompt = d.hasPrompt ? node.children[1] : null;
+    const d = data[i]
+    const { node } = d
+    const img = node.children[0]
+    const prompt = d.hasPrompt ? node.children[1] : null
     const inView =
       d.y.pos - adjustedScrollTop <= newWindowSizeY + browserUIMaxSizeBottom &&
       d.y.pos + d.sizeY.pos - adjustedScrollTop >= -browserUIMaxSizeTop &&
       d.x.pos <= newWindowSizeX &&
-      d.x.pos + d.sizeX.pos >= 0;
+      d.x.pos + d.sizeX.pos >= 0
 
     if (inView) {
-      node.style.width = `${d.sizeX.pos}px`;
-      node.style.height = `${d.sizeY.pos}px`;
-      node.style.transform = `translate3d(${d.x.pos}px,${d.y.pos}px,0) scale(${d.scale.pos})`;
+      node.style.width = `${d.sizeX.pos}px`
+      node.style.height = `${d.sizeY.pos}px`
+      node.style.transform = `translate3d(${d.x.pos}px,${d.y.pos}px,0) scale(${d.scale.pos})`
       node.style.filter =
         newFocused != null &&
         (i === newFocused - 1 || i === newFocused || i === newFocused + 1)
           ? `brightness(${d.fxFactor.pos * 100}%) blur(${Math.max(
-              0,
-              6 - d.fxFactor.pos * 6
-            )}px)`
-          : `brightness(${d.fxFactor.pos * 100}%)`;
-      node.style.zIndex = i === newFocused ? data.length + 999 : i + 1;
+            0,
+            6 - d.fxFactor.pos * 6,
+          )}px)`
+          : `brightness(${d.fxFactor.pos * 100}%)`
+      node.style.zIndex = i === newFocused ? data.length + 999 : i + 1
 
       if (prompt) {
-        prompt.style.top = `${d.sizeX.pos / d.ar}px`;
-        prompt.style.overflowY = i === newFocused ? "auto" : "hidden";
+        prompt.style.top = `${d.sizeX.pos / d.ar}px`
+        prompt.style.overflowY = i === newFocused ? 'auto' : 'hidden'
         prompt.style.height = `${
           (i === newFocused ? prompt1DSizeY : promptSizeY) - promptPaddingBottom
-        }px`;
+        }px`
         prompt.style.lineClamp = prompt.style.webkitLineClamp =
-          i === newFocused ? 999 : 2;
+          i === newFocused ? 999 : 2
       }
-      img.style.display = "block";
+      img.style.display = 'block'
 
-      if (node.parentNode == null) document.body.appendChild(node);
+      if (node.parentNode == null) document.body.appendChild(node)
     } else if (node.parentNode != null) {
-      document.body.removeChild(node);
+      document.body.removeChild(node)
     }
   }
 
-  document.body.style.cursor = cursor;
-  document.body.style.overflowY = newFocused == null ? "auto" : "hidden";
-  dummyPlaceholder.style.height = `${rowsTop.at(-1)}px`;
+  document.body.style.cursor = cursor
+  document.body.style.overflowY = newFocused == null ? 'auto' : 'hidden'
+  dummyPlaceholder.style.height = `${rowsTop.at(-1)}px`
 
   // === State Updates
   if (adjustedScrollTop !== currentScrollY) {
     (isSafari ? document.body : window).scrollTo({
       top: adjustedScrollTop,
-    });
+    })
   }
   if (newFocused !== focused) {
     window.history.pushState(
       null,
-      "",
+      '',
       `${window.location.pathname}${window.location.search}${
-        newFocused == null ? "" : "#" + data[newFocused].id
-      }`
-    );
+        newFocused == null ? '' : '#' + data[newFocused].id
+      }`,
+    )
   }
 
-  events.keydown = events.click = events.mousemove = null;
-  animatedUntilTime = stillAnimating ? newAnimatedUntilTime : null;
-  anchor = newAnchor;
-  windowSizeX = newWindowSizeX;
-  windowSizeY = newWindowSizeY;
-  scrollY = adjustedScrollTop;
+  events.keydown = events.click = events.mousemove = null
+  animatedUntilTime = stillAnimating ? newAnimatedUntilTime : null
+  anchor = newAnchor
+  windowSizeX = newWindowSizeX
+  windowSizeY = newWindowSizeY
+  scrollY = adjustedScrollTop
 
-  return stillAnimating;
+  return stillAnimating
 }
 
 // === Public API
-export function initCardViewer(initialData) {
+export function initCardViewer (initialData) {
   // Clear existing data and DOM nodes
   data.forEach((d) => {
     if (d.node && d.node.parentNode) {
-      document.body.removeChild(d.node);
+      document.body.removeChild(d.node)
     }
-  });
+  })
 
   data = initialData.map((d, i) => {
-    const ar = d.w / d.h;
+    const ar = d.w / d.h
     const currentWindowSizeX =
-      windowSizeX || document.documentElement.clientWidth;
-    const { cols, boxMaxSizeX } = colsBoxMaxSizeXF(currentWindowSizeX);
-    const imgMaxSizeY = boxMaxSizeX + 100;
-    const sizeX = Math.min(d.w, boxMaxSizeX, imgMaxSizeY * ar);
-    const sizeY = sizeX / ar + (d.prompt ? promptSizeY : 0);
+      windowSizeX || document.documentElement.clientWidth
+    const { cols, boxMaxSizeX } = colsBoxMaxSizeXF(currentWindowSizeX)
+    const imgMaxSizeY = boxMaxSizeX + 100
+    const sizeX = Math.min(d.w, boxMaxSizeX, imgMaxSizeY * ar)
+    const sizeY = sizeX / ar + (d.prompt ? promptSizeY : 0)
 
-    const node = document.createElement("div");
-    node.className = "box";
-    node.style.backgroundImage = `url(${d.lowResSrc})`;
+    const node = document.createElement('div')
+    node.className = 'box'
+    node.style.backgroundImage = `url(${d.lowResSrc})`
 
-    const img = document.createElement("img");
-    const children = [img];
-    const hasPrompt = d.prompt != null;
+    const img = document.createElement('img')
+    const children = [img]
+    const hasPrompt = d.prompt != null
     if (hasPrompt) {
-      const promptNode = document.createElement("figcaption");
-      promptNode.className = "prompt";
-      promptNode.textContent = d.prompt;
-      children.push(promptNode);
+      const promptNode = document.createElement('figcaption')
+      promptNode.className = 'prompt'
+      promptNode.textContent = d.prompt
+      children.push(promptNode)
     }
-    node.append(...children);
+    node.append(...children)
 
     return {
       id: d.id,
@@ -472,12 +478,12 @@ export function initCardViewer(initialData) {
       sizeY: spring(sizeY),
       x: spring(
         (boxMaxSizeX + boxesGapX) * (i % cols) +
-          boxesGapX +
-          (boxMaxSizeX - sizeX) / 2
+        boxesGapX +
+        (boxMaxSizeX - sizeX) / 2,
       ),
       y: spring(
         windowPaddingTop +
-          Math.floor(i / cols) * (boxMaxSizeX * 0.7 + boxesGapY)
+        Math.floor(i / cols) * (boxMaxSizeX * 0.7 + boxesGapY),
       ),
       scale: spring(1),
       fxFactor: spring(1),
@@ -486,82 +492,82 @@ export function initCardViewer(initialData) {
       isUpload: d.isUpload,
       onUploadClick: d.onUploadClick,
       hasPrompt,
-    };
-  });
+    }
+  })
 
-  scheduleRender();
+  scheduleRender()
 }
 
-export function updateCardImage(id, highResSrc, width, height) {
-  const card = data.find((d) => d.id === id);
+export function updateCardImage (id, highResSrc, width, height) {
+  const card = data.find((d) => d.id === id)
   if (card) {
-    card.node.children[0].src = highResSrc;
-    card.naturalSizeX = width;
-    card.ar = width / height;
+    card.node.children[0].src = highResSrc
+    card.naturalSizeX = width
+    card.ar = width / height
 
     const currentWindowSizeX =
-      windowSizeX || document.documentElement.clientWidth;
-    const { boxMaxSizeX } = colsBoxMaxSizeXF(currentWindowSizeX);
-    const imgMaxSizeY = boxMaxSizeX + 100;
+      windowSizeX || document.documentElement.clientWidth
+    const { boxMaxSizeX } = colsBoxMaxSizeXF(currentWindowSizeX)
+    const imgMaxSizeY = boxMaxSizeX + 100
     const newSizeX = Math.min(
       card.naturalSizeX,
       boxMaxSizeX,
-      imgMaxSizeY * card.ar
-    );
-    const newSizeY = newSizeX / card.ar + (card.hasPrompt ? promptSizeY : 0);
+      imgMaxSizeY * card.ar,
+    )
+    const newSizeY = newSizeX / card.ar + (card.hasPrompt ? promptSizeY : 0)
 
-    card.sizeX.dest = newSizeX;
-    card.sizeY.dest = newSizeY;
-    scheduleRender();
+    card.sizeX.dest = newSizeX
+    card.sizeY.dest = newSizeY
+    scheduleRender()
   }
 }
 
-export function initializeCardViewer() {
+export function initializeCardViewer () {
   isSafari =
-    navigator.userAgent.includes("Safari") &&
-    !navigator.userAgent.includes("Chrome");
+    navigator.userAgent.includes('Safari') &&
+    !navigator.userAgent.includes('Chrome')
   if (isSafari) {
-    document.body.style.contain = "layout";
-    document.body.style.width = "100vw";
-    document.body.style.height = "100vh";
+    document.body.style.contain = 'layout'
+    document.body.style.width = '100vw'
+    document.body.style.height = '100vh'
   }
 
-  reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  windowSizeX = document.documentElement.clientWidth;
-  windowSizeY = document.documentElement.clientHeight;
-  scrollY = isSafari ? document.body.scrollTop : window.scrollY;
-  pointer = { x: -Infinity, y: -Infinity };
-  events = { keydown: null, click: null, mousemove: null };
+  reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+  windowSizeX = document.documentElement.clientWidth
+  windowSizeY = document.documentElement.clientHeight
+  scrollY = isSafari ? document.body.scrollTop : window.scrollY
+  pointer = { x: -Infinity, y: -Infinity }
+  events = { keydown: null, click: null, mousemove: null }
 
-  dummyPlaceholder = document.createElement("div");
-  dummyPlaceholder.style.position = "absolute";
-  dummyPlaceholder.style.width = "1px";
-  document.body.append(dummyPlaceholder);
+  dummyPlaceholder = document.createElement('div')
+  dummyPlaceholder.style.position = 'absolute'
+  dummyPlaceholder.style.width = '1px'
+  document.body.append(dummyPlaceholder)
 
   if (debug) {
     document.documentElement.style.background =
-      "repeating-linear-gradient(#e66465 0px, #9198e5 300px)";
-    document.documentElement.style.height = "100%";
+      'repeating-linear-gradient(#e66465 0px, #9198e5 300px)'
+    document.documentElement.style.height = '100%'
   }
 
-  window.addEventListener("resize", scheduleRender);
-  window.addEventListener("scroll", scheduleRender, true);
-  window.addEventListener("popstate", scheduleRender);
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "Space") {
-      e.preventDefault();
+  window.addEventListener('resize', scheduleRender)
+  window.addEventListener('scroll', scheduleRender, true)
+  window.addEventListener('popstate', scheduleRender)
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault()
     }
-    events.keydown = e;
-    scheduleRender();
-  });
-  window.addEventListener("click", (e) => {
-    events.click = e;
-    scheduleRender();
-  });
-  window.addEventListener("mousemove", (e) => {
-    events.mousemove = e;
-    scheduleRender();
-  });
+    events.keydown = e
+    scheduleRender()
+  })
+  window.addEventListener('click', (e) => {
+    events.click = e
+    scheduleRender()
+  })
+  window.addEventListener('mousemove', (e) => {
+    events.mousemove = e
+    scheduleRender()
+  })
 
-  scheduleRender();
+  scheduleRender()
 }

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Supernote Viewer
+Comment=View Supernote .note files in VS Code
+Icon=text-editor
+Exec=code %f
+MimeType=application/x-supernote
+Categories=Office;Viewer;
+StartupNotify=true
+NoDisplay=false
