@@ -1,0 +1,81 @@
+{
+  "name": "supernote-vscode",
+  "displayName": "Supernote Viewer",
+  "description": "View and navigate Supernote .note files directly in VS Code",
+  "version": "0.1.0",
+  "publisher": "cristianvasquez",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "supernote",
+    "viewer",
+    "note",
+    "pdf",
+    "viewer"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "supernote.viewer",
+        "displayName": "Supernote Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.note"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "supernote.openFile",
+        "title": "Open with Supernote Viewer",
+        "category": "Supernote"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "supernote.openFile",
+          "when": "resourceExtname == .note",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/color": "^4.2.0",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "supernote-typescript": "^0.2.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cristianvasquez/supernote-vscode-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cristianvasquez/supernote-vscode-extension/issues"
+  },
+  "homepage": "https://github.com/cristianvasquez/supernote-vscode-extension#readme",
+  "license": "MIT"
+}
