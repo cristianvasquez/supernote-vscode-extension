@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Supernote Protocol Handler
+Comment=Handle supernote:// URLs to open notes at specific pages
+Icon=text-editor
+Exec=/home/cvasquez/config/bin/supernote-opener %u
+MimeType=x-scheme-handler/supernote
+Categories=Office;Viewer;
+StartupNotify=true
+NoDisplay=true

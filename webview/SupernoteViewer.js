@@ -8,8 +8,6 @@ export class SupernoteViewer {
   constructor(options = {}) {
     this.onProgress = options.onProgress || (() => {});
     this.onPageComplete = options.onPageComplete || (() => {});
-    this.onUploadClick = options.onUploadClick || (() => {});
-    this.showUploadCard = options.showUploadCard !== false; // default to true
 
     this.totalPages = 0;
     this.completedPages = 0;
@@ -26,33 +24,7 @@ export class SupernoteViewer {
       this.isInitialized = true;
     }
 
-    if (this.showUploadCard) {
-      this.showUploadState();
-    } else {
-      this.showEmptyGrid();
-    }
-  }
-
-  showUploadState() {
-    const uploadCard = {
-      id: "upload-card",
-      w: 1404, // Match Supernote dimensions
-      h: 1872, // Match Supernote dimensions
-      prompt: "Click to select .note file",
-      lowResSrc:
-        "data:image/svg+xml;charset=utf-8," +
-        encodeURIComponent(
-          '<svg width="1404" height="1872" xmlns="http://www.w3.org/2000/svg">' +
-            '<rect width="100%" height="100%" fill="#f8f9fa" stroke="#dee2e6" stroke-width="4" stroke-dasharray="20,10" rx="8"/>' +
-            '<text x="50%" y="50%" font-family="system-ui" font-size="48" fill="#6c757d" text-anchor="middle" dominant-baseline="middle">📄</text>' +
-            "</svg>"
-        ),
-      highResSrc: "",
-      isUpload: true,
-      onUploadClick: this.onUploadClick,
-    };
-
-    initCardViewer([uploadCard]);
+    this.showEmptyGrid();
   }
 
   showEmptyGrid() {
@@ -68,44 +40,18 @@ export class SupernoteViewer {
     this.completedPages = 0;
     this.pages.clear();
 
-    // Create transparent placeholder cards for all pages
-    // Using typical Supernote dimensions (portrait, taller than wide)
     const transparentPixel =
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
     const pageCards = Array.from({ length: totalPages }, (_, i) => ({
       id: `page-${i + 1}`,
-      w: 1404, // Typical Supernote width
-      h: 1872, // Typical Supernote height (portrait)
+      w: 1404,
+      h: 1872,
       lowResSrc: transparentPixel,
       highResSrc: "",
     }));
 
-    // Include upload card if enabled
-    const allCards = this.showUploadCard
-      ? [this.createUploadCard(), ...pageCards]
-      : pageCards;
-    initCardViewer(allCards);
-  }
-
-  createUploadCard() {
-    return {
-      id: "upload-card",
-      w: 1404, // Match Supernote dimensions
-      h: 1872, // Match Supernote dimensions
-      prompt: "Click to select .note file",
-      lowResSrc:
-        "data:image/svg+xml;charset=utf-8," +
-        encodeURIComponent(
-          '<svg width="1404" height="1872" xmlns="http://www.w3.org/2000/svg">' +
-            '<rect width="100%" height="100%" fill="#f8f9fa" stroke="#dee2e6" stroke-width="4" stroke-dasharray="20,10" rx="8"/>' +
-            '<text x="50%" y="50%" font-family="system-ui" font-size="48" fill="#6c757d" text-anchor="middle" dominant-baseline="middle">📄</text>' +
-            "</svg>"
-        ),
-      highResSrc: "",
-      isUpload: true,
-      onUploadClick: this.onUploadClick,
-    };
+    initCardViewer(pageCards);
   }
 
   /**
@@ -126,7 +72,6 @@ export class SupernoteViewer {
     const pageId = `page-${pageNumber}`;
     const highResSrc = `data:image/png;base64,${base64Data}`;
 
-    // Store page data
     this.pages.set(pageNumber, {
       id: pageId,
       width,
@@ -135,10 +80,8 @@ export class SupernoteViewer {
       highResSrc,
     });
 
-    // Update the card in the viewer
     updateCardImage(pageId, highResSrc, width, height);
 
-    // Update progress
     this.completedPages++;
     this.onProgress(this.completedPages, this.totalPages);
     this.onPageComplete(pageNumber, highResSrc, width, height);
@@ -151,12 +94,7 @@ export class SupernoteViewer {
     this.totalPages = 0;
     this.completedPages = 0;
     this.pages.clear();
-
-    if (this.showUploadCard) {
-      this.showUploadState();
-    } else {
-      this.showEmptyGrid();
-    }
+    this.showEmptyGrid();
   }
 
   /**
@@ -195,5 +133,16 @@ export class SupernoteViewer {
       percentage:
         this.totalPages > 0 ? (this.completedPages / this.totalPages) * 100 : 0,
     };
+  }
+
+  /**
+   * Navigate to a specific page
+   * @param {number} pageNumber - Page number (0-indexed for internal use)
+   */
+  navigateToPage(pageNumber) {
+    const pageId = `page-${pageNumber + 1}`;
+    window.location.hash = pageId;
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    console.log(`Navigated to page ${pageNumber + 1} (ID: ${pageId})`);
   }
 }

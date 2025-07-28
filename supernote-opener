@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Parse supernote:// URL
+# Format: supernote:///absolute/path/to/file.note?page=3
+# or: supernote://file.note?page=3 (relative to current directory)
+
+URL="$1"
+
+# Remove protocol prefix and URL decode
+FILE_PATH=$(echo "$URL" | sed 's|^supernote://||' | python3 -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))")
+
+# Extract page number if present
+if [[ "$FILE_PATH" == *"?"* ]]; then
+    QUERY_PART=$(echo "$FILE_PATH" | cut -d'?' -f2)
+    FILE_PATH=$(echo "$FILE_PATH" | cut -d'?' -f1)
+    
+    # Parse page parameter
+    if [[ "$QUERY_PART" == *"page="* ]]; then
+        PAGE=$(echo "$QUERY_PART" | sed -n 's/.*page=\([0-9]*\).*/\1/p')
+    fi
+fi
+
+# Convert relative path to absolute if needed
+if [[ "$FILE_PATH" != /* ]]; then
+    FILE_PATH="$(pwd)/$FILE_PATH"
+fi
+
+# Open in VS Code
+if [[ -n "$PAGE" ]]; then
+    # Store page info for extension to read
+    echo "$PAGE" > "/tmp/supernote-page-${USER}"
+    code "$FILE_PATH"
+else
+    code "$FILE_PATH"
+fi
