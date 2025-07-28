@@ -33,11 +33,11 @@ const browserUIMaxSizeTop = 100
 const browserUIMaxSizeBottom = 150
 
 // === Spring Physics
-function spring (pos, v = 0, k = 450, b = 45) {
+function spring(pos, v = 0, k = 450, b = 45) {
   return { pos, dest: pos, v, k, b }
 }
 
-function springStep (s) {
+function springStep(s) {
   const t = msPerAnimationStep / 1000
   const { pos, dest, v, k, b } = s
   const Fspring = -k * (pos - dest)
@@ -47,12 +47,12 @@ function springStep (s) {
   s.pos += s.v * t
 }
 
-function springGoToEnd (s) {
+function springGoToEnd(s) {
   s.pos = s.dest
   s.v = 0
 }
 
-function springForEach (fn) {
+function springForEach(fn) {
   for (const d of data) {
     fn(d.x)
     fn(d.y)
@@ -64,11 +64,11 @@ function springForEach (fn) {
 }
 
 // === Helpers
-function clamp (min, v, max) {
+function clamp(min, v, max) {
   return Math.max(min, Math.min(v, max))
 }
 
-function colsBoxMaxSizeXF (containerSizeX) {
+function colsBoxMaxSizeXF(containerSizeX) {
   const boxMinSizeX = 220
   const cols = clamp(
     1,
@@ -79,7 +79,7 @@ function colsBoxMaxSizeXF (containerSizeX) {
   return { cols, boxMaxSizeX }
 }
 
-function scheduleRender () {
+function scheduleRender() {
   if (!scheduledRender) {
     scheduledRender = true
     requestAnimationFrame(function (now) {
@@ -90,7 +90,7 @@ function scheduleRender () {
 }
 
 // === Hit Testing
-function hitTest2DMode (data, pointerX, pointerY) {
+function hitTest2DMode(data, pointerX, pointerY) {
   for (let i = 0; i < data.length; i++) {
     const { x, y, sizeX, sizeY } = data[i]
     if (
@@ -104,7 +104,7 @@ function hitTest2DMode (data, pointerX, pointerY) {
   return null
 }
 
-function hitTest1DMode (data, focused, windowSizeX, pointerX) {
+function hitTest1DMode(data, focused, windowSizeX, pointerX) {
   if (focused > 0 && pointerX <= hitArea1DSizeX) return focused - 1
   if (focused < data.length - 1 && pointerX >= windowSizeX - hitArea1DSizeX)
     return focused + 1
@@ -112,7 +112,7 @@ function hitTest1DMode (data, focused, windowSizeX, pointerX) {
 }
 
 // === Main Render Function
-function render (now) {
+function render(now) {
   if (data.length === 0) return
 
   const inputCode = events.keydown?.code ?? null
@@ -382,7 +382,7 @@ function render (now) {
       node.style.transform = `translate3d(${d.x.pos}px,${d.y.pos}px,0) scale(${d.scale.pos})`
       node.style.filter =
         newFocused != null &&
-        (i === newFocused - 1 || i === newFocused || i === newFocused + 1)
+          (i === newFocused - 1 || i === newFocused || i === newFocused + 1)
           ? `brightness(${d.fxFactor.pos * 100}%) blur(${Math.max(
             0,
             6 - d.fxFactor.pos * 6,
@@ -393,9 +393,8 @@ function render (now) {
       if (prompt) {
         prompt.style.top = `${d.sizeX.pos / d.ar}px`
         prompt.style.overflowY = i === newFocused ? 'auto' : 'hidden'
-        prompt.style.height = `${
-          (i === newFocused ? prompt1DSizeY : promptSizeY) - promptPaddingBottom
-        }px`
+        prompt.style.height = `${(i === newFocused ? prompt1DSizeY : promptSizeY) - promptPaddingBottom
+          }px`
         prompt.style.lineClamp = prompt.style.webkitLineClamp =
           i === newFocused ? 999 : 2
       }
@@ -421,8 +420,7 @@ function render (now) {
     window.history.pushState(
       null,
       '',
-      `${window.location.pathname}${window.location.search}${
-        newFocused == null ? '' : '#' + data[newFocused].id
+      `${window.location.pathname}${window.location.search}${newFocused == null ? '' : '#' + data[newFocused].id
       }`,
     )
   }
@@ -438,7 +436,7 @@ function render (now) {
 }
 
 // === Public API
-export function initCardViewer (initialData) {
+export function initCardViewer(initialData) {
   // Clear existing data and DOM nodes
   data.forEach((d) => {
     if (d.node && d.node.parentNode) {
@@ -499,7 +497,7 @@ export function initCardViewer (initialData) {
   scheduleRender()
 }
 
-export function updateCardImage (id, highResSrc, width, height) {
+export function updateCardImage(id, highResSrc, width, height) {
   const card = data.find((d) => d.id === id)
   if (card) {
     card.node.children[0].src = highResSrc
@@ -523,7 +521,7 @@ export function updateCardImage (id, highResSrc, width, height) {
   }
 }
 
-export function initializeCardViewer () {
+export function initializeCardViewer() {
   isSafari =
     navigator.userAgent.includes('Safari') &&
     !navigator.userAgent.includes('Chrome')

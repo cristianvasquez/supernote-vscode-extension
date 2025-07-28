@@ -56,12 +56,22 @@ const viewer = new SupernoteViewer({
   },
 });
 
+// Queue for messages that arrive before webview is ready
+let messageQueue = [];
+let isWebviewReady = false;
+
 // VSCode webview API (provided by VSCode)
 const vscode = acquireVsCodeApi();
 
 // Listen for messages from the VSCode extension
 window.addEventListener("message", (event) => {
   const message = event.data;
+
+  // If webview isn't ready yet, queue the message
+  if (!isWebviewReady && message.type !== "webview-ready") {
+    messageQueue.push(message);
+    return;
+  }
 
   switch (message.type) {
     case "start-processing":
@@ -156,5 +166,17 @@ vscode.postMessage({
   type: "webview-ready",
 });
 
+// Mark webview as ready and process any queued messages
+isWebviewReady = true;
 console.log("VSCode Supernote Webview initialized");
 console.log("Viewer object:", viewer);
+
+// Process any messages that arrived before webview was ready
+if (messageQueue.length > 0) {
+  console.log(`Processing ${messageQueue.length} queued messages`);
+  messageQueue.forEach(message => {
+    // Simulate the message event
+    window.dispatchEvent(new MessageEvent('message', { data: message }));
+  });
+  messageQueue = [];
+}

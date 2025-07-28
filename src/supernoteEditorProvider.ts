@@ -58,6 +58,10 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
             webviewPanel.webview
         );
 
+        // Start processing the file immediately (don't wait for webview-ready)
+        // This reduces perceived latency by starting work early
+        this.processSupernoteFile(document.uri, webviewPanel.webview);
+
         // Handle messages from webview
         webviewPanel.webview.onDidReceiveMessage(
             (message) => {
@@ -65,7 +69,6 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
                 switch (message.type) {
                     case "webview-ready":
                         console.log("Webview is ready");
-                        this.processSupernoteFile(document.uri, webviewPanel.webview);
                         this.checkPageNavigation(webviewPanel.webview);
                         break;
 
@@ -122,7 +125,7 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
                             type: "add-page",
                             pageNumber: msg.pageIndex + 1,
                             base64Data: base64,
-                            width: msg.width || 1404,
+                            width:  msg.width || 1404,
                             height: msg.height || 1872,
                         });
                     } else {
