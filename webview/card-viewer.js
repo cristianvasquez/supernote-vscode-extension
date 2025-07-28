@@ -457,6 +457,7 @@ export function initCardViewer (initialData) {
 
     const node = document.createElement('div')
     node.className = 'box'
+    node.setAttribute('data-page-id', d.id)
     node.style.backgroundImage = `url(${d.lowResSrc})`
 
     const img = document.createElement('img')

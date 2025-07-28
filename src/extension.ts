@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import {SupernoteEditorProvider} from './supernoteEditorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -45,6 +46,22 @@ export function activate(context: vscode.ExtensionContext) {
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to copy URL: ${error}`);
             }
+        })
+    );
+
+    // Register command to get current page info
+    context.subscriptions.push(
+        vscode.commands.registerCommand('supernote.getCurrentPage', () => {
+            const pageInfo = SupernoteEditorProvider.getCurrentPageInfo();
+            if (!pageInfo) {
+                vscode.window.showWarningMessage('No active Supernote file found');
+                return;
+            }
+
+            const {currentPage, filePath} = pageInfo;
+            vscode.window.showInformationMessage(
+                `Current page: ${currentPage + 1} of file: ${path.basename(filePath)}`
+            );
         })
     );
 }

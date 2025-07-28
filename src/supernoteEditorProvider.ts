@@ -6,21 +6,17 @@ import * as path from "path";
 import * as os from "os";
 
 export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvider {
-    private static activeEditors = new Map<string, {
-        webview: vscode.Webview;
-        filePath: string;
-        currentPage: number
-    }>();
+    private static currentPageInfo: { currentPage: number; filePath: string } | null = null;
 
     constructor(private readonly context: vscode.ExtensionContext) {
     }
 
     static getCurrentPageInfo(): { currentPage: number; filePath: string } | null {
-        // Find the active custom editor
-        for (const [key, editorInfo] of SupernoteEditorProvider.activeEditors.entries()) {
-            return {currentPage: editorInfo.currentPage, filePath: editorInfo.filePath};
-        }
-        return null;
+        return SupernoteEditorProvider.currentPageInfo;
+    }
+
+    static setCurrentPageInfo(currentPage: number, filePath: string): void {
+        SupernoteEditorProvider.currentPageInfo = { currentPage, filePath };
     }
 
     async openCustomDocument(
@@ -47,27 +43,18 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
             ],
         };
 
-        // Register this editor
-        const editorKey = document.uri.toString();
-        SupernoteEditorProvider.activeEditors.set(editorKey, {
-            webview: webviewPanel.webview,
-            filePath: document.uri.fsPath,
-            currentPage: 0
-        });
+        // Set initial page info
+        SupernoteEditorProvider.setCurrentPageInfo(0, document.uri.fsPath);
 
         // Clean up when panel is disposed
         webviewPanel.onDidDispose(() => {
-            SupernoteEditorProvider.activeEditors.delete(editorKey);
+            SupernoteEditorProvider.currentPageInfo = null;
         });
 
         // Set initial HTML content
         webviewPanel.webview.html = await this.getWebviewContent(
             webviewPanel.webview
         );
-
-        // Wait for webview to be ready before processing
-        let webviewReady = false;
-        let processingStarted = false;
 
         // Handle messages from webview
         webviewPanel.webview.onDidReceiveMessage(
@@ -76,27 +63,22 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
                 switch (message.type) {
                     case "webview-ready":
                         console.log("Webview is ready");
-                        webviewReady = true;
-
-                        // Start processing if not already started
-                        if (!processingStarted) {
-                            processingStarted = true;
-                            this.processSupernoteFile(document.uri, webviewPanel.webview);
-                        }
-
-                        // Check for page navigation from protocol handler
+                        this.processSupernoteFile(document.uri, webviewPanel.webview);
                         this.checkPageNavigation(webviewPanel.webview);
                         break;
 
-                    case "ready-for-pages":
-                        console.log("Webview is ready to receive pages");
+                    case "page-changed":
+                        // Update current page info
+                        SupernoteEditorProvider.setCurrentPageInfo(
+                            message.pageNumber, 
+                            document.uri.fsPath
+                        );
+                        console.log(`Updated current page to: ${message.pageNumber + 1}`);
                         break;
 
                     case "progress":
                         console.log(
-                            `Progress: ${message.completed}/${
-                                message.total
-                            } (${message.percentage?.toFixed(1)}%)`
+                            `Progress: ${message.completed}/${message.total} (${message.percentage?.toFixed(1)}%)`
                         );
                         break;
 
@@ -105,37 +87,11 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
                             `Page ${message.pageNumber} rendered: ${message.width}x${message.height}`
                         );
                         break;
-
-                    case "page-changed":
-                        // Update current page for this editor
-                        const editorInfo = SupernoteEditorProvider.activeEditors.get(document.uri.toString());
-                        if (editorInfo) {
-                            editorInfo.currentPage = message.pageNumber;
-                            console.log(`Updated current page to: ${message.pageNumber + 1}`);
-                        }
-                        break;
                 }
             },
             undefined,
             this.context.subscriptions
         );
-
-        // Fallback: start processing after a short delay if webview doesn't send ready
-        setTimeout(() => {
-            if (!processingStarted) {
-                console.log("Starting processing via fallback");
-                processingStarted = true;
-
-                // Send filename
-                const filename = path.basename(document.uri.fsPath);
-                webviewPanel.webview.postMessage({
-                    command: "setFilename",
-                    filename: filename,
-                });
-
-                this.processSupernoteFile(document.uri, webviewPanel.webview);
-            }
-        }, 1000);
     }
 
     private async processSupernoteFile(

@@ -52,6 +52,11 @@
         "command": "supernote.copyPageUrl",
         "title": "Copy URL to Current Page",
         "category": "Supernote"
+      },
+      {
+        "command": "supernote.getCurrentPage",
+        "title": "Show Current Page Info",
+        "category": "Supernote"
       }
     ],
     "menus": {
