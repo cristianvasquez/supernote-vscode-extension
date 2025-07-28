@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import {SupernoteEditorProvider} from './supernoteEditorProvider';
 
+let provider: SupernoteEditorProvider;
+
 export function activate(context: vscode.ExtensionContext) {
     console.log('Supernote extension is now active!');
 
     // Register the custom editor provider
-    const provider = new SupernoteEditorProvider(context);
+    provider = new SupernoteEditorProvider(context);
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(
             'supernote.viewer',
@@ -68,4 +70,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
     console.log('Supernote extension deactivated');
+    if (provider) {
+        provider.dispose();
+    }
 }

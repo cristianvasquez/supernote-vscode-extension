@@ -1,14 +1,16 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import {SupernoteX, toImage} from "supernote-typescript";
-import {Worker} from "worker_threads";
 import * as path from "path";
 import * as os from "os";
+import {WorkerPool} from "./workerPool";
 
 export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private static currentPageInfo: { currentPage: number; filePath: string } | null = null;
+    private workerPool: WorkerPool;
 
     constructor(private readonly context: vscode.ExtensionContext) {
+        this.workerPool = new WorkerPool(4, context);
     }
 
     static getCurrentPageInfo(): { currentPage: number; filePath: string } | null {
@@ -98,7 +100,6 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
         fileUri: vscode.Uri,
         webview: vscode.Webview
     ) {
-        const maxWorkers = 4;
         const fileData = await vscode.workspace.fs.readFile(fileUri);
         const note = new SupernoteX(fileData);
         const totalPages = note.pages.length;
@@ -108,68 +109,51 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
             totalPages,
         });
 
-        const queue = Array.from({length: totalPages}, (_, i) => i);
         let completed = 0;
-        let activeWorkers = 0;
+        const processingPromises: Promise<void>[] = [];
 
-        const workerPath = vscode.Uri.joinPath(
-            this.context.extensionUri,
-            "out",
-            "page-worker.js"
-        ).fsPath;
-
-        const startWorker = () => {
-            if (queue.length === 0 || activeWorkers >= maxWorkers) return;
-
-            const pageIndex = queue.shift()!;
-            activeWorkers++;
-            const worker = new Worker(workerPath);
-
-            worker.postMessage({noteBuffer: fileData, pageIndex});
-
-            worker.on("message", (msg) => {
-                if (msg.status === "success") {
-                    const base64 = Buffer.from(msg.buffer).toString("base64");
+        // Process all pages using the worker pool
+        for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+            const promise = this.workerPool.processPage(Buffer.from(fileData), pageIndex)
+                .then((msg) => {
+                    if (msg.status === "success") {
+                        const base64 = Buffer.from(msg.buffer!).toString("base64");
+                        webview.postMessage({
+                            type: "add-page",
+                            pageNumber: msg.pageIndex + 1,
+                            base64Data: base64,
+                            width: msg.width || 1404,
+                            height: msg.height || 1872,
+                        });
+                    } else {
+                        console.error(`Error on page ${msg.pageIndex + 1}:`, msg.error);
+                    }
+                    
+                    completed++;
                     webview.postMessage({
-                        type: "add-page",
-                        pageNumber: msg.pageIndex + 1,
-                        base64Data: base64,
-                        width: msg.width || 1404,
-                        height: msg.height || 1872,
+                        type: "progress",
+                        completed,
+                        total: totalPages,
+                        percentage: (completed / totalPages) * 100
                     });
-                } else {
-                    console.error(`Error on page ${msg.pageIndex + 1}:`, msg.error);
-                }
-            });
+                })
+                .catch((error) => {
+                    console.error(`Failed to process page ${pageIndex + 1}:`, error);
+                    completed++;
+                });
 
-            worker.on("exit", () => {
-                completed++;
-                activeWorkers--;
-                if (completed >= totalPages) {
-                    console.log("All pages processed.");
-                    webview.postMessage({type: "processing-complete"});
-                } else {
-                    startWorker(); // Start a new worker if there are more pages
-                }
-            });
-
-            worker.on("error", (err) => {
-                console.error(`Worker failed on page ${pageIndex + 1}:`, err);
-                completed++;
-                activeWorkers--;
-                if (completed >= totalPages) {
-                    console.log("All pages processed (with errors).");
-                    webview.postMessage({type: "processing-complete"});
-                } else {
-                    startWorker(); // Start a new worker to continue processing
-                }
-            });
-        };
-
-        // Start up to `maxWorkers` initially
-        for (let i = 0; i < Math.min(maxWorkers, totalPages); i++) {
-            startWorker();
+            processingPromises.push(promise);
         }
+
+        // Wait for all pages to be processed
+        await Promise.all(processingPromises);
+        
+        console.log("All pages processed.");
+        webview.postMessage({type: "processing-complete"});
+        
+        // Log worker pool stats
+        const stats = this.workerPool.getStats();
+        console.log("Worker pool stats:", stats);
     }
 
     private async checkPageNavigation(webview: vscode.Webview): Promise<void> {
@@ -213,5 +197,9 @@ export class SupernoteEditorProvider implements vscode.CustomReadonlyEditorProvi
     <script type="module" src="${baseUri}/vscode-webview.js"></script>
 </body>
 </html>`;
+    }
+
+    async dispose(): Promise<void> {
+        await this.workerPool.shutdown();
     }
 }

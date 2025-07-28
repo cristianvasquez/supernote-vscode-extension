@@ -20,7 +20,5 @@ parentPort?.on("message", async ({noteBuffer, pageIndex}) => {
             pageIndex,
             error: error instanceof Error ? error.message : String(error),
         });
-    } finally {
-        process.exit(0); // Ensure the worker terminates
     }
 });
