@@ -12,10 +12,12 @@ const CONFIG = {
       damping: 45
     }
   },
+  card: {
+    width: 1404,    // Fixed width for all cards
+    height: 1872,   // Fixed height for all cards
+    aspectRatio: 1404 / 1872
+  },
   layout: {
-    promptPaddingBottom: 8,
-    promptSizeY: 44 + 8, // includes padding
-    prompt1DSizeY: 64 + 8, // includes padding
     boxesGapX: 24,
     boxesGapY: 24,
     boxes1DGapX: 52,
@@ -28,7 +30,10 @@ const CONFIG = {
     browserUIMaxSizeBottom: 150,
     boxMinSizeX: 220,
     maxColumns: 7,
-    minBrightness: 0.2 // Minimum brightness to keep pages visible
+    minBrightness: 0.2, // Minimum brightness to keep pages visible
+    scaleFactor2D: 1,   // Scale for cards in grid mode
+    scaleFactor1DFocused: 1,      // Scale for focused card in 1D mode
+    scaleFactor1DUnfocused: 0.7   // Scale for unfocused cards in 1D mode
   }
 }
 
@@ -85,8 +90,6 @@ class SpringPhysics {
     for (const d of data) {
       fn(d.x)
       fn(d.y)
-      fn(d.sizeX)
-      fn(d.sizeY)
       fn(d.scale)
       fn(d.fxFactor)
     }
@@ -94,7 +97,7 @@ class SpringPhysics {
 }
 
 // ===================================
-// Layout Calculations
+// Layout Calculations (Simplified for uniform cards)
 // ===================================
 class LayoutCalculator {
   static calculateColumns(containerWidth) {
@@ -110,38 +113,47 @@ class LayoutCalculator {
     return { cols, boxMaxSizeX }
   }
 
-  static calculate2DLayout(data, windowWidth) {
-    const { cols, boxMaxSizeX } = this.calculateColumns(windowWidth)
-    const { windowPaddingTop, boxesGapY, promptSizeY } = CONFIG.layout
+  static getCardSize2D(boxMaxSizeX) {
+    // Calculate size maintaining aspect ratio within the max box size
+    const { width, height, aspectRatio } = CONFIG.card
+    const { scaleFactor2D } = CONFIG.layout
 
-    const boxes2DSizeX = []
-    const boxes2DSizeY = []
-    const rowsTop = [windowPaddingTop]
-    let rowMaxSizeY = 0
+    let cardWidth = Math.min(width, boxMaxSizeX)
+    let cardHeight = cardWidth / aspectRatio
 
-    for (let i = 0; i < data.length; i++) {
-      const d = data[i]
-      const imgMaxSizeY = this.getMaxImageHeight(d.ar, boxMaxSizeX)
-      const sizeX = Math.min(d.naturalSizeX, boxMaxSizeX, imgMaxSizeY * d.ar)
-      const sizeY = sizeX / d.ar + (d.hasPrompt ? promptSizeY : 0)
-
-      boxes2DSizeX.push(sizeX)
-      boxes2DSizeY.push(sizeY)
-      rowMaxSizeY = Math.max(rowMaxSizeY, sizeY)
-
-      if (i % cols === cols - 1 || i === data.length - 1) {
-        rowsTop.push(rowsTop.at(-1) + rowMaxSizeY + boxesGapY)
-        rowMaxSizeY = 0
-      }
+    // If height is too large, constrain by height instead
+    const maxHeight = boxMaxSizeX * 1.3 // Allow slightly taller cards
+    if (cardHeight > maxHeight) {
+      cardHeight = maxHeight
+      cardWidth = cardHeight * aspectRatio
     }
 
-    return { boxes2DSizeX, boxes2DSizeY, rowsTop, cols, boxMaxSizeX }
+    return {
+      width: cardWidth * scaleFactor2D,
+      height: cardHeight * scaleFactor2D
+    }
   }
 
-  static getMaxImageHeight(aspectRatio, boxMaxSizeX) {
-    if (aspectRatio === 1) return boxMaxSizeX * 0.85
-    if (aspectRatio < 1) return boxMaxSizeX * 1.05
-    return boxMaxSizeX
+  static calculate2DLayout(dataLength, windowWidth) {
+    const { cols, boxMaxSizeX } = this.calculateColumns(windowWidth)
+    const cardSize = this.getCardSize2D(boxMaxSizeX)
+    const { windowPaddingTop, boxesGapY } = CONFIG.layout
+
+    const rowsTop = [windowPaddingTop]
+    const rowCount = Math.ceil(dataLength / cols)
+
+    // All rows have the same height since all cards are the same size
+    for (let row = 1; row <= rowCount; row++) {
+      rowsTop.push(rowsTop[row - 1] + cardSize.height + boxesGapY)
+    }
+
+    return {
+      cols,
+      boxMaxSizeX,
+      cardSize,
+      rowsTop,
+      rowHeight: cardSize.height
+    }
   }
 }
 
@@ -151,12 +163,13 @@ class LayoutCalculator {
 class HitTester {
   static test2DMode(data, pointerX, pointerY) {
     for (let i = 0; i < data.length; i++) {
-      const { x, y, sizeX, sizeY } = data[i]
+      const { x, y } = data[i]
+      const cardSize = data[i].displaySize
       if (
         x.dest <= pointerX &&
-        pointerX < x.dest + sizeX.dest &&
+        pointerX < x.dest + cardSize.width &&
         y.dest <= pointerY &&
-        pointerY < y.dest + sizeY.dest
+        pointerY < y.dest + cardSize.height
       ) {
         return i
       }
@@ -213,32 +226,35 @@ class NavigationHandler {
 }
 
 // ===================================
-// Position Calculator
+// Position Calculator (Simplified for uniform cards)
 // ===================================
 class PositionCalculator {
   static calculate2DPositions(data, layout, pointerX, pointerY) {
-    const { boxes2DSizeX, boxes2DSizeY, rowsTop, cols, boxMaxSizeX } = layout
+    const { cols, boxMaxSizeX, cardSize } = layout
     const { boxesGapX, hoverMagnetFactor } = CONFIG.layout
 
     for (let i = 0; i < data.length; i++) {
       const d = data[i]
+      const col = i % cols
       const row = Math.floor(i / cols)
-      const rowMaxSizeY = rowsTop[row + 1] - CONFIG.layout.boxesGapY - rowsTop[row]
 
-      d.sizeX.dest = boxes2DSizeX[i]
-      d.sizeY.dest = boxes2DSizeY[i]
-      d.x.dest = boxesGapX + (boxMaxSizeX + boxesGapX) * (i % cols) + (boxMaxSizeX - boxes2DSizeX[i]) / 2
-      d.y.dest = rowsTop[row] + (rowMaxSizeY - boxes2DSizeY[i]) / 2
+      // Center cards in their grid cells
+      const cellX = boxesGapX + (boxMaxSizeX + boxesGapX) * col
+      const cellCenterX = cellX + (boxMaxSizeX - cardSize.width) / 2
+
+      d.x.dest = cellCenterX
+      d.y.dest = layout.rowsTop[row]
       d.scale.dest = 1
       d.fxFactor.dest = 1
+      d.displaySize = cardSize
     }
 
     // Apply hover effect
     const hit = HitTester.test2DMode(data, pointerX, pointerY)
     if (hit != null) {
       const d = data[hit]
-      d.x.dest += (pointerX - (d.x.dest + d.sizeX.dest / 2)) / hoverMagnetFactor
-      d.y.dest += (pointerY - (d.y.dest + d.sizeY.dest / 2)) / hoverMagnetFactor
+      d.x.dest += (pointerX - (d.x.dest + cardSize.width / 2)) / hoverMagnetFactor
+      d.y.dest += (pointerY - (d.y.dest + cardSize.height / 2)) / hoverMagnetFactor
       d.scale.dest = 1.02
     }
 
@@ -246,16 +262,33 @@ class PositionCalculator {
   }
 
   static calculate1DPositions(data, focused, windowSize, inputCode) {
-    const { windowPaddingTop, prompt1DSizeY, promptSizeY, boxes1DGapY, boxes1DGapX, hitArea1DSizeX } = CONFIG.layout
-    const img1DSizeY = windowSize.y - windowPaddingTop - (data[focused].hasPrompt ? prompt1DSizeY : 0) - boxes1DGapY
-    const box1DMaxSizeX = windowSize.x - boxes1DGapX * 2 - hitArea1DSizeX * 2
+    const { windowPaddingTop, boxes1DGapY, boxes1DGapX, hitArea1DSizeX, scaleFactor1DFocused, scaleFactor1DUnfocused } = CONFIG.layout
+    const { aspectRatio } = CONFIG.card
+
+    // Calculate card sizes for 1D mode
+    const maxCardHeight = windowSize.y - windowPaddingTop - boxes1DGapY
+    const maxCardWidth = windowSize.x - boxes1DGapX * 2 - hitArea1DSizeX * 2
+
+    let focusedCardWidth = maxCardHeight * aspectRatio
+    let focusedCardHeight = maxCardHeight
+
+    // Constrain by width if needed
+    if (focusedCardWidth > maxCardWidth) {
+      focusedCardWidth = maxCardWidth
+      focusedCardHeight = focusedCardWidth / aspectRatio
+    }
+
+    // Apply scale factors
+    focusedCardWidth *= scaleFactor1DFocused
+    focusedCardHeight *= scaleFactor1DFocused
+
+    const unfocusedCardWidth = focusedCardWidth * (scaleFactor1DUnfocused / scaleFactor1DFocused)
+    const unfocusedCardHeight = focusedCardHeight * (scaleFactor1DUnfocused / scaleFactor1DFocused)
 
     // Calculate starting position for previous pages
     let currentLeft = hitArea1DSizeX + boxes1DGapX
     for (let i = focused - 1; i >= 0; i--) {
-      const d = data[i]
-      const imgSizeX = Math.min(d.naturalSizeX, box1DMaxSizeX, img1DSizeY * d.ar) * 0.7
-      currentLeft -= imgSizeX + boxes1DGapX
+      currentLeft -= unfocusedCardWidth + boxes1DGapX
     }
 
     // Apply edge and vertical boosts for navigation feel
@@ -266,20 +299,18 @@ class PositionCalculator {
     for (let i = 0; i < data.length; i++) {
       const d = data[i]
       const isFocused = i === focused
-      const scaleFactor = isFocused ? 1 : 0.7
-      const imgSizeX = Math.min(d.naturalSizeX, box1DMaxSizeX, img1DSizeY * d.ar) * scaleFactor
-      const sizeY = imgSizeX / d.ar + (d.hasPrompt ? (isFocused ? prompt1DSizeY : promptSizeY) : 0)
+      const cardWidth = isFocused ? focusedCardWidth : unfocusedCardWidth
+      const cardHeight = isFocused ? focusedCardHeight : unfocusedCardHeight
 
-      d.sizeX.dest = imgSizeX
-      d.sizeY.dest = sizeY
-      d.y.dest = Math.max(windowPaddingTop, (windowSize.y - sizeY) / 2) + state.scrollY
-      d.x.dest = isFocused ? (windowSize.x - imgSizeX) / 2 : currentLeft
+      d.displaySize = { width: cardWidth, height: cardHeight }
+      d.y.dest = Math.max(windowPaddingTop, (windowSize.y - cardHeight) / 2) + state.scrollY
+      d.x.dest = isFocused ? (windowSize.x - cardWidth) / 2 : currentLeft
       d.x.v += edgeBoost / (isFocused ? 1 : 4)
       d.y.v += verticalBoost / (isFocused ? 1 : 4)
       d.scale.dest = 1
       d.fxFactor.dest = isFocused ? 1 : 0.2
 
-      currentLeft = isFocused ? windowSize.x - hitArea1DSizeX : currentLeft + imgSizeX + boxes1DGapX
+      currentLeft = isFocused ? windowSize.x - hitArea1DSizeX : currentLeft + cardWidth + boxes1DGapX
     }
   }
 
@@ -297,17 +328,16 @@ class PositionCalculator {
 }
 
 // ===================================
-// DOM Renderer
+// DOM Renderer (Simplified for uniform cards)
 // ===================================
 class DOMRenderer {
   static updateElements(data, focused, scrollY, windowSize) {
-    const { browserUIMaxSizeTop, browserUIMaxSizeBottom, minBrightness, promptSizeY, prompt1DSizeY, promptPaddingBottom } = CONFIG.layout
+    const { browserUIMaxSizeTop, browserUIMaxSizeBottom, minBrightness } = CONFIG.layout
 
     for (let i = 0; i < data.length; i++) {
       const d = data[i]
       const { node } = d
       const img = node.children[0]
-      const prompt = d.hasPrompt ? node.children[1] : null
 
       // Always render adjacent pages when in focused mode
       const isAdjacentToFocused = focused != null &&
@@ -317,7 +347,6 @@ class DOMRenderer {
 
       if (inView) {
         this.applyStyles(node, d, i, focused, minBrightness, data.length)
-        this.updatePrompt(prompt, i === focused, promptSizeY, prompt1DSizeY, promptPaddingBottom, d)
         img.style.display = 'block'
 
         if (node.parentNode == null) {
@@ -330,17 +359,19 @@ class DOMRenderer {
   }
 
   static isInViewport(d, scrollY, windowSize, topMargin, bottomMargin) {
+    const cardSize = d.displaySize || { width: CONFIG.card.width, height: CONFIG.card.height }
     return (
       d.y.pos - scrollY <= windowSize.y + bottomMargin &&
-      d.y.pos + d.sizeY.pos - scrollY >= -topMargin &&
+      d.y.pos + cardSize.height - scrollY >= -topMargin &&
       d.x.pos <= windowSize.x &&
-      d.x.pos + d.sizeX.pos >= 0
+      d.x.pos + cardSize.width >= 0
     )
   }
 
   static applyStyles(node, d, index, focused, minBrightness, totalItems) {
-    node.style.width = `${d.sizeX.pos}px`
-    node.style.height = `${d.sizeY.pos}px`
+    const cardSize = d.displaySize || { width: CONFIG.card.width, height: CONFIG.card.height }
+    node.style.width = `${cardSize.width}px`
+    node.style.height = `${cardSize.height}px`
     node.style.transform = `translate3d(${d.x.pos}px,${d.y.pos}px,0) scale(${d.scale.pos})`
 
     // Ensure minimum brightness to prevent "erased" pages
@@ -356,19 +387,12 @@ class DOMRenderer {
     node.style.zIndex = index === focused ? totalItems + 999 : index + 1
   }
 
-  static updatePrompt(prompt, isFocused, promptSizeY, prompt1DSizeY, promptPaddingBottom, d) {
-    if (!prompt) return
-
-    prompt.style.top = `${d.sizeX.pos / d.ar}px`
-    prompt.style.overflowY = isFocused ? 'auto' : 'hidden'
-    prompt.style.height = `${(isFocused ? prompt1DSizeY : promptSizeY) - promptPaddingBottom}px`
-    prompt.style.lineClamp = prompt.style.webkitLineClamp = isFocused ? 999 : 2
-  }
-
   static updateDocumentStyles(focused, rowsTop) {
     document.body.style.cursor = state.events.mousemove ? 'auto' : document.body.style.cursor
     document.body.style.overflowY = focused == null ? 'auto' : 'hidden'
-    state.dummyPlaceholder.style.height = `${rowsTop.at(-1)}px`
+    if (state.dummyPlaceholder && rowsTop) {
+      state.dummyPlaceholder.style.height = `${rowsTop.at(-1)}px`
+    }
   }
 }
 
@@ -401,7 +425,7 @@ class RenderEngine {
     const pointerYLocal = state.pointer.y + currentScrollY
 
     // Calculate layout
-    const layout = LayoutCalculator.calculate2DLayout(state.data, newWindowSize.x)
+    const layout = LayoutCalculator.calculate2DLayout(state.data.length, newWindowSize.x)
 
     // Handle navigation
     let newFocused = NavigationHandler.handleKeyboardNavigation(
@@ -472,38 +496,22 @@ class RenderEngine {
   static handleClick(focused, pointerX, pointerY, newFocused, windowSizeX) {
     const { target } = state.events.click
 
-    if (target.tagName === 'FIGCAPTION') {
-      this.selectText(target)
-      return newFocused
-    }
-
     if (focused == null) {
       const hitIndex = HitTester.test2DMode(state.data, pointerX, pointerY)
-      if (hitIndex !== null && state.data[hitIndex].isUpload && state.data[hitIndex].onUploadClick) {
-        state.data[hitIndex].onUploadClick()
-        return newFocused
-      }
       return hitIndex ?? newFocused
     }
 
     return HitTester.test1DMode(state.data, focused, windowSizeX, pointerX) ?? newFocused
   }
 
-  static selectText(target) {
-    const selection = window.getSelection()
-    const range = document.createRange()
-    range.selectNodeContents(target)
-    selection.removeAllRanges()
-    selection.addRange(range)
-  }
-
   static handle2DMode(focused, layout, pointerX, pointerY, currentScrollY, windowSize, currentAnchor) {
-    const { rowsTop, boxes2DSizeY } = layout
+    const { rowsTop, cardSize } = layout
     let adjustedScrollTop = currentScrollY
 
     if (focused != null) {
-      const focusedTop = rowsTop[Math.floor(focused / layout.cols)]
-      const focusedBottom = focusedTop + boxes2DSizeY[focused]
+      const row = Math.floor(focused / layout.cols)
+      const focusedTop = rowsTop[row]
+      const focusedBottom = focusedTop + cardSize.height
       if (focusedTop <= currentScrollY || focusedBottom >= currentScrollY + windowSize.y) {
         adjustedScrollTop = focusedTop - CONFIG.layout.boxesGapY - CONFIG.layout.gapTopPeek
       }
@@ -518,7 +526,7 @@ class RenderEngine {
     if (adjustedScrollTop !== state.scrollY && Math.abs(anchorY - adjustedScrollTop) > windowSize.y / 10) {
       for (let newAnchor = 0; newAnchor < state.data.length; newAnchor += layout.cols) {
         const d = state.data[newAnchor]
-        if (d.y.dest + d.sizeY.dest - adjustedScrollTop > windowSize.y / 5) {
+        if (d.y.dest + cardSize.height - adjustedScrollTop > windowSize.y / 5) {
           state.anchor = newAnchor
           break
         }
@@ -535,8 +543,9 @@ class RenderEngine {
     const hit = HitTester.test1DMode(state.data, focused, windowSize.x, pointerX)
     if (hit != null) {
       const d = state.data[hit]
-      d.x.dest += (pointerX - (d.x.dest + d.sizeX.dest / 2)) / CONFIG.layout.hoverMagnetFactor
-      d.y.dest += (pointerY - (d.y.dest + d.sizeY.dest / 2)) / CONFIG.layout.hoverMagnetFactor
+      const cardSize = d.displaySize
+      d.x.dest += (pointerX - (d.x.dest + cardSize.width / 2)) / CONFIG.layout.hoverMagnetFactor
+      d.y.dest += (pointerY - (d.y.dest + cardSize.height / 2)) / CONFIG.layout.hoverMagnetFactor
       d.scale.dest = 1.02
       d.fxFactor.dest = 0.5
       return 'zoom-in'
@@ -591,16 +600,13 @@ class RenderEngine {
 }
 
 // ===================================
-// Initialization
+// Initialization (Simplified for uniform cards)
 // ===================================
 class CardViewerInitializer {
   static createCardData(item, index) {
-    const ar = item.w / item.h
     const currentWindowSizeX = state.windowSize.x || document.documentElement.clientWidth
     const { cols, boxMaxSizeX } = LayoutCalculator.calculateColumns(currentWindowSizeX)
-    const imgMaxSizeY = boxMaxSizeX + 100
-    const sizeX = Math.min(item.w, boxMaxSizeX, imgMaxSizeY * ar)
-    const sizeY = sizeX / ar + (item.prompt ? CONFIG.layout.promptSizeY : 0)
+    const cardSize = LayoutCalculator.getCardSize2D(boxMaxSizeX)
 
     const node = document.createElement('div')
     node.className = 'box'
@@ -608,40 +614,23 @@ class CardViewerInitializer {
     node.style.backgroundImage = `url(${item.lowResSrc})`
 
     const img = document.createElement('img')
-    const children = [img]
-    const hasPrompt = item.prompt != null
+    node.appendChild(img)
 
-    if (hasPrompt) {
-      const promptNode = document.createElement('figcaption')
-      promptNode.className = 'prompt'
-      promptNode.textContent = item.prompt
-      children.push(promptNode)
-    }
-
-    node.append(...children)
+    const col = index % cols
+    const row = Math.floor(index / cols)
+    const cellX = CONFIG.layout.boxesGapX + (boxMaxSizeX + CONFIG.layout.boxesGapX) * col
+    const cellCenterX = cellX + (boxMaxSizeX - cardSize.width) / 2
+    const initialY = CONFIG.layout.windowPaddingTop + row * (cardSize.height + CONFIG.layout.boxesGapY)
 
     return {
       id: item.id,
-      naturalSizeX: item.w,
-      ar,
-      sizeX: SpringPhysics.create(sizeX),
-      sizeY: SpringPhysics.create(sizeY),
-      x: SpringPhysics.create(
-        (boxMaxSizeX + CONFIG.layout.boxesGapX) * (index % cols) +
-        CONFIG.layout.boxesGapX +
-        (boxMaxSizeX - sizeX) / 2
-      ),
-      y: SpringPhysics.create(
-        CONFIG.layout.windowPaddingTop +
-        Math.floor(index / cols) * (boxMaxSizeX * 0.7 + CONFIG.layout.boxesGapY)
-      ),
+      x: SpringPhysics.create(cellCenterX),
+      y: SpringPhysics.create(initialY),
       scale: SpringPhysics.create(1),
       fxFactor: SpringPhysics.create(1),
       node,
       highResSrc: item.highResSrc,
-      isUpload: item.isUpload,
-      onUploadClick: item.onUploadClick,
-      hasPrompt
+      displaySize: cardSize
     }
   }
 
@@ -715,7 +704,7 @@ function scheduleRender() {
 }
 
 // ===================================
-// Public API
+// Public API (Simplified for uniform cards)
 // ===================================
 export function initCardViewer(initialData) {
   // Clear existing data and DOM nodes
@@ -736,23 +725,12 @@ export function initCardViewer(initialData) {
   scheduleRender()
 }
 
-export function updateCardImage(id, highResSrc, width, height) {
+export function updateCardImage(id, highResSrc) {
   const card = state.data.find((d) => d.id === id)
   if (!card) return
 
   card.node.children[0].src = highResSrc
-  card.naturalSizeX = width
-  card.ar = width / height
-
-  // Recalculate size based on new dimensions
-  const currentWindowSizeX = state.windowSize.x || document.documentElement.clientWidth
-  const { boxMaxSizeX } = LayoutCalculator.calculateColumns(currentWindowSizeX)
-  const imgMaxSizeY = boxMaxSizeX + 100
-  const newSizeX = Math.min(card.naturalSizeX, boxMaxSizeX, imgMaxSizeY * card.ar)
-  const newSizeY = newSizeX / card.ar + (card.hasPrompt ? CONFIG.layout.promptSizeY : 0)
-
-  card.sizeX.dest = newSizeX
-  card.sizeY.dest = newSizeY
+  card.highResSrc = highResSrc
 
   scheduleRender()
 }
