@@ -142,7 +142,19 @@ export class SupernoteViewer {
   navigateToPage(pageNumber) {
     const pageId = `page-${pageNumber + 1}`;
     window.location.hash = pageId;
+
+    // Force multiple render cycles to ensure proper positioning
+    // This helps when navigating directly to a page via protocol
     window.dispatchEvent(new PopStateEvent("popstate"));
+
+    // Schedule additional renders to ensure animations complete
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    });
+
     console.log(`Navigated to page ${pageNumber + 1} (ID: ${pageId})`);
   }
 }
